@@ -6,10 +6,7 @@ cloneObject = (object) ->
   clone
 
 module.exports = ({blobStore}) ->
-  startCrashReporter = require('./crash-reporter-start')
   {remote} = require 'electron'
-
-  startCrashReporter() # Before anything else
 
   exitWithStatusCode = (status) ->
     remote.app.emit('will-quit')
@@ -18,14 +15,31 @@ module.exports = ({blobStore}) ->
   try
     path = require 'path'
     {ipcRenderer} = require 'electron'
-    {getWindowLoadSettings} = require './window-load-settings-helpers'
+    getWindowLoadSettings = require './get-window-load-settings'
+    CompileCache = require './compile-cache'
     AtomEnvironment = require '../src/atom-environment'
     ApplicationDelegate = require '../src/application-delegate'
-    require '../src/electron-shims'
+    Clipboard = require '../src/clipboard'
+    TextEditor = require '../src/text-editor'
+    {updateProcessEnv} = require('./update-process-env')
+    require './electron-shims'
 
-    {testRunnerPath, legacyTestRunnerPath, headless, logFile, testPaths} = getWindowLoadSettings()
+    ipcRenderer.on 'environment', (event, env) ->
+      updateProcessEnv(env)
 
-    unless headless
+    {testRunnerPath, legacyTestRunnerPath, headless, logFile, testPaths, env} = getWindowLoadSettings()
+
+    if headless
+      # Install console functions that output to stdout and stderr.
+      util = require 'util'
+
+      Object.defineProperties process,
+        stdout: {value: remote.process.stdout}
+        stderr: {value: remote.process.stderr}
+
+      console.log = (args...) -> process.stdout.write "#{util.format(args...)}\n"
+      console.error = (args...) -> process.stderr.write "#{util.format(args...)}\n"
+    else
       # Show window synchronously so a focusout doesn't fire on input elements
       # that are focused in the very first spec run.
       remote.getCurrentWindow().show()
@@ -35,9 +49,11 @@ module.exports = ({blobStore}) ->
       if (event.metaKey or event.ctrlKey) and event.keyCode is 82
         ipcHelpers.call('window-method', 'reload')
 
-      # Toggle Dev Tools: cmd-alt-i / ctrl-alt-i
-      if (event.metaKey or event.ctrlKey) and event.altKey and event.keyCode is 73
-        ipcHelpers.call('window-method', 'toggleDevTools')
+      # Toggle Dev Tools: cmd-alt-i (Mac) / ctrl-shift-i (Linux/Windows)
+      if event.keyCode is 73 and (
+        (process.platform is 'darwin' and event.metaKey and event.altKey) or
+        (process.platform isnt 'darwin' and event.ctrlKey and event.shiftKey))
+          ipcHelpers.call('window-method', 'toggleDevTools')
 
       # Close: cmd-w / ctrl-w
       if (event.metaKey or event.ctrlKey) and event.keyCode is 87
@@ -54,16 +70,33 @@ module.exports = ({blobStore}) ->
     require('module').globalPaths.push(exportsPath)
     process.env.NODE_PATH = exportsPath # Set NODE_PATH env variable since tasks may need it.
 
+    updateProcessEnv(env)
+
+    # Set up optional transpilation for packages under test if any
+    FindParentDir = require 'find-parent-dir'
+    if packageRoot = FindParentDir.sync(testPaths[0], 'package.json')
+      packageMetadata = require(path.join(packageRoot, 'package.json'))
+      if packageMetadata.atomTranspilers
+        CompileCache.addTranspilerConfigForPath(packageRoot, packageMetadata.name, packageMetadata, packageMetadata.atomTranspilers)
+
     document.title = "Spec Suite"
+
+    clipboard = new Clipboard
+    TextEditor.setClipboard(clipboard)
+    TextEditor.viewForItem = (item) -> atom.views.getView(item)
 
     testRunner = require(testRunnerPath)
     legacyTestRunner = require(legacyTestRunnerPath)
     buildDefaultApplicationDelegate = -> new ApplicationDelegate()
     buildAtomEnvironment = (params) ->
       params = cloneObject(params)
+      params.clipboard = clipboard unless params.hasOwnProperty("clipboard")
       params.blobStore = blobStore unless params.hasOwnProperty("blobStore")
       params.onlyLoadBaseStyleSheets = true unless params.hasOwnProperty("onlyLoadBaseStyleSheets")
-      new AtomEnvironment(params)
+      atomEnvironment = new AtomEnvironment(params)
+      atomEnvironment.initialize(params)
+      TextEditor.setScheduler(atomEnvironment.views)
+      atomEnvironment
 
     promise = testRunner({
       logFile, headless, testPaths, buildAtomEnvironment, buildDefaultApplicationDelegate, legacyTestRunner

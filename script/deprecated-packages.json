@@ -866,14 +866,14 @@
     "hasDeprecations": true,
     "latestHasDeprecations": true
   },
+  "language-nlf": {
+    "hasAlternative": true,
+    "alternative": "language-nsis"
+  },
   "language-rspec": {
     "version": "<=0.2.1",
     "hasDeprecations": true,
     "latestHasDeprecations": false
-  },
-  "language-typescript": {
-    "hasAlternative": true,
-    "alternative": "atom-typescript"
   },
   "laravel-facades": {
     "version": "<=1.0.0",

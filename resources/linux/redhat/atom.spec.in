@@ -7,7 +7,11 @@ URL:            https://atom.io/
 AutoReqProv:    no # Avoid libchromiumcontent.so missing dependency
 Prefix:         <%= installDir %>
 
-Requires: lsb-core-noarch
+%ifarch i386 i486 i586 i686
+Requires: lsb-core-noarch, libXss.so.1 libsecret-1.so.0, polkit
+%else
+Requires: lsb-core-noarch, libXss.so.1()(64bit) libsecret-1.so.0()(64bit), polkit
+%endif
 
 %description
 <%= description %>
@@ -21,6 +25,8 @@ cp atom.sh "%{buildroot}/<%= installDir %>/bin/<%= appFileName %>"
 chmod 755 "%{buildroot}/<%= installDir %>/bin/<%= appFileName %>"
 mkdir -p "%{buildroot}/<%= installDir %>/share/applications/"
 cp "<%= appFileName %>.desktop" "%{buildroot}/<%= installDir %>/share/applications/"
+mkdir -p "%{buildroot}/<%= installDir %>/share/polkit-1/actions/"
+cp "<%= policyFileName %>" "%{buildroot}/<%= installDir %>/share/polkit-1/actions/<%= policyFileName %>"
 
 mkdir -p "%{buildroot}/<%= installDir %>/share/icons/hicolor/1024x1024/apps"
 cp "icons/1024.png" "%{buildroot}/<%= installDir %>/share/icons/hicolor/1024x1024/apps/<%= appFileName %>.png"
@@ -46,4 +52,5 @@ cp "icons/16.png" "%{buildroot}/<%= installDir %>/share/icons/hicolor/16x16/apps
 <%= installDir %>/bin/<%= apmFileName %>
 <%= installDir %>/share/<%= appFileName %>/
 <%= installDir %>/share/applications/<%= appFileName %>.desktop
+<%= installDir %>/share/polkit-1/actions/<%= policyFileName %>
 <%= installDir %>/share/icons/hicolor/

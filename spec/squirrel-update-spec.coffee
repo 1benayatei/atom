@@ -1,7 +1,7 @@
 {EventEmitter} = require 'events'
 fs = require 'fs-plus'
 path = require 'path'
-temp = require 'temp'
+temp = require('temp').track()
 SquirrelUpdate = require '../src/main-process/squirrel-update'
 Spawner = require '../src/main-process/spawner'
 WinShell = require '../src/main-process/win-shell'
@@ -35,6 +35,10 @@ describe "Windows Squirrel Update", ->
     WinShell.fileContextMenu = new FakeShellOption()
     WinShell.folderContextMenu = new FakeShellOption()
     WinShell.folderBackgroundContextMenu = new FakeShellOption()
+
+  afterEach ->
+    try
+      temp.cleanupSync()
 
   it "quits the app on all squirrel events", ->
     app = quit: jasmine.createSpy('quit')
@@ -76,7 +80,7 @@ describe "Windows Squirrel Update", ->
 
       jasmine.unspy(Spawner, 'spawn')
       spyOn(Spawner, 'spawn').andCallFake (command, args, callback) ->
-        if path.basename(command) is 'Update.exe' and args?[0] is '--createShortcut'
+        if path.basename(command) is 'Update.exe' and args?[0] is '--createShortcut' and args?[3].match /Desktop/i
           fs.writeFileSync(desktopShortcutPath, '')
         else
           # simply ignore other commands
@@ -118,16 +122,3 @@ describe "Windows Squirrel Update", ->
 
         it "still has desktop shortcut", ->
           expect(fs.existsSync(desktopShortcutPath)).toBe true
-
-  describe ".restartAtom", ->
-    it "quits the app and spawns a new one", ->
-      app = new EventEmitter()
-      app.quit = jasmine.createSpy('quit')
-
-      SquirrelUpdate.restartAtom(app)
-      expect(app.quit.callCount).toBe 1
-
-      expect(Spawner.spawn.callCount).toBe 0
-      app.emit('will-quit')
-      expect(Spawner.spawn.callCount).toBe 1
-      expect(path.basename(Spawner.spawn.argsForCall[0][0])).toBe 'atom.cmd'
